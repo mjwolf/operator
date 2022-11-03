@@ -18,6 +18,7 @@ type ConfigMapSubscription struct {
 	Ctx context.Context
         PlatformConfig *platformConfig
         PlatformConfigPhase string
+	PodSubscriptRef *PodSubscription
 }
 
 var (
@@ -45,6 +46,19 @@ func isPlatformConfigMap(configMap *v1.ConfigMap) (bool, error) {
 }
 
 
+func (p *ConfigMapSubscription) configChange(configMap *v1.ConfigMap, event watch.EventType) {
+	p.PlatformConfigPhase = string(event)
+	rawDefaultsString := configMap.Data["platform-defaults"]
+	var unMarshalledData platformConfig
+	err := yaml.Unmarshal([]byte(rawDefaultsString), &unMarshalledData)
+	if err != nil {
+		klog.Error(err)
+		return
+	}
+	p.PlatformConfig = &unMarshalledData
+
+	p.PodSubscriptRef.UpdatePods()
+}
 
 func (p *ConfigMapSubscription) Reconcile(object runtime.Object, event watch.EventType) {
 	configMap := object.(*v1.ConfigMap)
@@ -56,19 +70,12 @@ func (p *ConfigMapSubscription) Reconcile(object runtime.Object, event watch.Eve
         }
 	switch event {
 	case watch.Added:
-                p.PlatformConfigPhase = string(event)
-                rawDefaultsString := configMap.Data["platform-defaults"]
-                var unMarshalledData platformConfig
-                err := yaml.Unmarshal([]byte(rawDefaultsString), &unMarshalledData)
-                if err != nil {
-                        klog.Error(err)
-                        return
-                }
-                p.PlatformConfig = &unMarshalledData
+		p.configChange(configMap, event)
 	case watch.Deleted:
                 p.PlatformConfigPhase = string(event)
                 p.PlatformConfig = nil
 	case watch.Modified:
+		p.configChange(configMap, event)
 	}
 }
 

@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -15,11 +16,12 @@ type PodSubscription struct {
 	ClientSet kubernetes.Interface
 	Ctx context.Context
         ConfigMapSubscriptRef *ConfigMapSubscription
+	knownPods []*v1.Pod
 }
 
-func (p *PodSubscription) applyConfigMapChanges(pod *v1.Pod, event watch.EventType) {
+func (p *PodSubscription) applyConfigMapChanges(pod *v1.Pod) *v1.Pod {
         if p.ConfigMapSubscriptRef == nil || p.ConfigMapSubscriptRef.PlatformConfig == nil {
-                return
+                return nil
         }
 
         updatedPod := pod.DeepCopy()
@@ -35,6 +37,19 @@ func (p *PodSubscription) applyConfigMapChanges(pod *v1.Pod, event watch.EventTy
         if err != nil {
                 klog.Error(err)
         }
+	return updatedPod
+}
+
+func (p *PodSubscription) UpdatePods() error {
+	if p.knownPods == nil {
+		return errors.New("knownPods not initialized!")
+	}
+	for _, pod := range p.knownPods {
+		if pod != nil {
+			p.applyConfigMapChanges(pod)
+		}
+	}
+	return nil
 }
 
 func (p *PodSubscription) Reconcile(object runtime.Object, event watch.EventType) {
@@ -43,10 +58,18 @@ func (p *PodSubscription) Reconcile(object runtime.Object, event watch.EventType
 
 	switch event {
 	case watch.Added:
-		p.applyConfigMapChanges(pod, event)
+		pod = p.applyConfigMapChanges(pod)
+		if p.knownPods == nil {
+			p.knownPods = make([]*v1.Pod, 1)
+		}
+		p.knownPods = append(p.knownPods, pod)
         case watch.Deleted:
 	case watch.Modified:
-                p.applyConfigMapChanges(pod, event)
+		pod = p.applyConfigMapChanges(pod)
+		if p.knownPods == nil {
+			p.knownPods = make([]*v1.Pod, 1)
+		}
+		p.knownPods = append(p.knownPods, pod)
 	}
 }
 

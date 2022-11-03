@@ -47,6 +47,8 @@ func main() {
                 ConfigMapSubscriptRef: configMapSubscription,
         }
 
+	configMapSubscription.PodSubscriptRef = podSubscription
+
         if err := runtime.RunLoop([]subscription.ISubscription{
 	        podSubscription,
                 configMapSubscription,
