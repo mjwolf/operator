@@ -52,6 +52,15 @@ func (p *PodSubscription) UpdatePods() error {
 	return nil
 }
 
+func (p *PodSubscription) maybeDeletePod(pod *v1.Pod) (bool, error) {
+	if pod.Annotations != nil && pod.Annotations["action"] == "delete" {
+		p.ClientSet.CoreV1().Pods(pod.Namespace).Delete(p.Ctx, pod.Name, metav1.DeleteOptions{})
+
+		return true, nil
+	}
+	return false, nil
+}
+
 func (p *PodSubscription) Reconcile(object runtime.Object, event watch.EventType) {
 	pod := object.(*v1.Pod)
 	klog.Infof("PodSubscription eventType %s for %s", event, pod.Name)
@@ -65,6 +74,9 @@ func (p *PodSubscription) Reconcile(object runtime.Object, event watch.EventType
 		p.knownPods = append(p.knownPods, pod)
         case watch.Deleted:
 	case watch.Modified:
+		if deleted, err := p.maybeDeletePod(pod); deleted || err != nil {
+			return
+		}
 		pod = p.applyConfigMapChanges(pod)
 		if p.knownPods == nil {
 			p.knownPods = make([]*v1.Pod, 1)
